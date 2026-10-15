@@ -1,0 +1,256 @@
+/* ================================
+   WANDERPLAN AI - MAP & ROUTES
+================================ */
+
+.wanderplan-map-section {
+  width: 100%;
+  margin: 28px 0;
+  color: #102a43;
+}
+
+.wanderplan-map-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.wanderplan-map-heading h2 {
+  margin: 8px 0;
+  color: #102a43;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 750;
+  letter-spacing: -0.6px;
+}
+
+.wanderplan-map-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.wanderplan-map {
+  width: 100%;
+  height: 440px;
+  min-height: 320px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dbe5f0;
+  border-radius: 20px;
+  background: #eaf1f8;
+  box-shadow: 0 8px 28px rgb(16 42 67 / 8%);
+}
+
+.wanderplan-map canvas {
+  outline: none;
+}
+
+.wanderplan-map .mapboxgl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid #dbe5f0;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgb(16 42 67 / 12%);
+}
+
+.wanderplan-map .mapboxgl-ctrl-group button {
+  width: 34px;
+  height: 34px;
+}
+
+.wanderplan-map .mapboxgl-ctrl-scale {
+  border-color: #64748b;
+  color: #102a43;
+  background: rgb(255 255 255 / 90%);
+}
+
+.wanderplan-map-message,
+.wanderplan-map-error {
+  padding: 12px 15px;
+  margin: 12px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.wanderplan-map-message {
+  color: #245c91;
+  background: #edf5ff;
+  border: 1px solid #cfe3ff;
+}
+
+.wanderplan-map-error {
+  color: #b42318;
+  background: #fff1f0;
+  border: 1px solid #ffd5d2;
+}
+
+.wanderplan-selected-route-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #cfe3ff;
+  border-radius: 14px;
+  background: #f2f7ff;
+}
+
+.wanderplan-selected-route-dot {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #3988ff;
+  box-shadow: 0 0 0 4px rgb(57 136 255 / 13%);
+}
+
+.wanderplan-selected-route-summary strong {
+  display: block;
+  color: #102a43;
+  font-size: 15px;
+}
+
+.wanderplan-selected-route-summary p {
+  margin: 5px 0 0;
+  color: #52677d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.wanderplan-route-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.wanderplan-route-option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+  min-width: 0;
+  padding: 17px;
+  text-align: left;
+  color: #102a43;
+  background: #fff;
+  border: 1px solid #dbe5f0;
+  border-radius: 15px;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.wanderplan-route-option:hover {
+  border-color: #8bbcff;
+  box-shadow: 0 6px 18px rgb(16 42 67 / 8%);
+  transform: translateY(-2px);
+}
+
+.wanderplan-route-option:focus-visible {
+  outline: 3px solid rgb(57 136 255 / 35%);
+  outline-offset: 3px;
+}
+
+.wanderplan-route-option.is-selected {
+  border: 2px solid #3988ff;
+  padding: 16px;
+  background: #f4f8ff;
+  box-shadow: 0 5px 18px rgb(57 136 255 / 12%);
+}
+
+.wanderplan-route-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wanderplan-route-option-top strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wanderplan-route-swatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(16 42 67 / 5%);
+}
+
+.wanderplan-route-distance {
+  color: #102a43;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.wanderplan-route-option small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wanderplan-route-option.is-selected small:last-child {
+  color: #1765c0;
+  font-weight: 700;
+}
+
+.wanderplan-map-disclaimer {
+  margin: 14px 0 0;
+  color: #7b8b9d;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* Tablet */
+@media (max-width: 850px) {
+  .wanderplan-route-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wanderplan-map {
+    height: 390px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 560px) {
+  .wanderplan-map-section {
+    margin: 20px 0;
+  }
+
+  .wanderplan-map {
+    height: 340px;
+    min-height: 280px;
+    border-radius: 14px;
+  }
+
+  .wanderplan-route-options {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .wanderplan-route-option {
+    padding: 15px;
+  }
+
+  .wanderplan-route-option.is-selected {
+    padding: 14px;
+  }
+
+  .wanderplan-route-distance {
+    font-size: 22px;
+  }
+
+  .wanderplan-map-heading h2 {
+    font-size: 23px;
+  }
+}

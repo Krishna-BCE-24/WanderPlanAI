@@ -1,0 +1,302 @@
+﻿import 'dotenv/config';
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
+
+import { connectDB, disconnectDB } from './config/db.js';
+import authRoutes from './routes/auth.routes.js';
+import tripRoutes from './routes/trip.routes.js';
+import photoRoutes from './routes/photo.routes.js';
+import discoverRoutes from './routes/discovery.routes.js';
+
+// --------------------------------------------------
+// INITIALIZE EXPRESS APPLICATION
+// --------------------------------------------------
+
+const app = express();
+
+const PORT = Number(process.env.PORT) || 5000;
+
+const CLIENT_URL =
+  process.env.CLIENT_URL || 'http://localhost:5173';
+
+// --------------------------------------------------
+// SECURITY MIDDLEWARE
+// --------------------------------------------------
+
+app.disable('x-powered-by');
+
+app.use(helmet());
+
+app.use(
+  cors({
+    origin: CLIENT_URL,
+    credentials: true,
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'OPTIONS',
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+    ],
+  })
+);
+
+// --------------------------------------------------
+// REQUEST PARSING
+// --------------------------------------------------
+
+app.use(express.json({ limit: '1mb' }));
+
+app.use(
+  express.urlencoded({
+    extended: false,
+    limit: '1mb',
+  })
+);
+
+app.use(cookieParser());
+
+// --------------------------------------------------
+// GLOBAL API RATE LIMITER
+// --------------------------------------------------
+
+const apiRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 200,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many requests. Please try again later.',
+  },
+});
+
+app.use('/api', apiRateLimit);
+
+// --------------------------------------------------
+// HEALTH CHECK
+// --------------------------------------------------
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'WanderPlan AI API is running',
+    database: 'connected',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// --------------------------------------------------
+// API ROUTES
+// --------------------------------------------------
+
+app.use('/api/auth', authRoutes);
+app.use('/api/trips', tripRoutes);
+app.use('/api/photos', photoRoutes);
+app.use('/api/discover', discoverRoutes);
+
+// --------------------------------------------------
+// UNKNOWN ENDPOINT HANDLER
+// --------------------------------------------------
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'API endpoint not found',
+    path: req.originalUrl,
+  });
+});
+
+// --------------------------------------------------
+// CENTRALIZED ERROR HANDLER
+// --------------------------------------------------
+
+app.use((err, req, res, next) => {
+  console.error('Server error:', {
+    method: req.method,
+    path: req.originalUrl,
+    message: err.message,
+    stack:
+      process.env.NODE_ENV === 'development'
+        ? err.stack
+        : undefined,
+  });
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const statusCode =
+    Number.isInteger(err.statusCode) &&
+    err.statusCode >= 400 &&
+    err.statusCode < 600
+      ? err.statusCode
+      : 500;
+
+  res.status(statusCode).json({
+    success: false,
+    message:
+      statusCode === 500
+        ? 'Internal server error'
+        : err.message,
+  });
+});
+
+// --------------------------------------------------
+// SERVER STATE
+// --------------------------------------------------
+
+let server = null;
+let shuttingDown = false;
+
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
+
+async function startServer() {
+  try {
+    console.log('Starting WanderPlan AI API...');
+
+    console.log('Frontend origin:', CLIENT_URL);
+    console.log('Configured port:', PORT);
+
+    await connectDB();
+
+    console.log('MongoDB connection established.');
+
+    server = app.listen(PORT);
+
+    server.on('listening', () => {
+      const address = server.address();
+
+      console.log(
+        `WanderPlan AI API running at http://localhost:${address.port}`
+      );
+
+      console.log('Health check: /api/health');
+      console.log('Authentication routes: /api/auth');
+      console.log('Trip routes: /api/trips');
+      console.log('Photo routes: /api/photos');
+      console.log('Discovery routes: /api/discover');
+    });
+
+    server.on('error', (error) => {
+      console.error('HTTP server error:', error);
+
+      if (error.code === 'EADDRINUSE') {
+        console.error(
+          `Port ${PORT} is already in use. Stop the other server or configure another port.`
+        );
+      }
+
+      process.exitCode = 1;
+    });
+  } catch (error) {
+    console.error(
+      'Failed to start WanderPlan AI:',
+      error.message
+    );
+
+    process.exitCode = 1;
+  }
+}
+
+// --------------------------------------------------
+// GRACEFUL SHUTDOWN
+// --------------------------------------------------
+
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  console.log(
+    `${signal} received. Shutting down gracefully...`
+  );
+
+  if (!server || !server.listening) {
+    try {
+      await disconnectDB();
+      console.log('Database disconnected.');
+    } catch (error) {
+      console.error(
+        'Database shutdown error:',
+        error.message
+      );
+
+      process.exitCode = 1;
+    }
+
+    return;
+  }
+
+  server.close(async (error) => {
+    try {
+      await disconnectDB();
+
+      if (error) {
+        console.error(
+          'HTTP server shutdown error:',
+          error.message
+        );
+
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log('Server and database disconnected.');
+    } catch (dbError) {
+      console.error(
+        'Database shutdown error:',
+        dbError.message
+      );
+
+      process.exitCode = 1;
+    }
+  });
+}
+
+// --------------------------------------------------
+// PROCESS SIGNALS
+// --------------------------------------------------
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+
+// --------------------------------------------------
+// UNHANDLED ERRORS
+// --------------------------------------------------
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+
+  void shutdown('uncaughtException').finally(() => {
+    process.exit(1);
+  });
+});
+
+// --------------------------------------------------
+// START APPLICATION
+// --------------------------------------------------
+
+void startServer();
