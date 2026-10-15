@@ -20,13 +20,14 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
 
-const CLIENT_URLS = [
-  process.env.CLIENT_URL,
-  'http://localhost:5173',
-].filter(Boolean);
-
 const allowedOrigins = new Set(
-  CLIENT_URLS.map((url) => url.replace(/\/+$/, ''))
+  [
+    'https://wanderplan-ai-elb8.onrender.com',
+    'http://localhost:5173',
+    ...(process.env.CLIENT_URL || '')
+      .split(',')
+      .map((url) => url.trim()),
+  ].filter(Boolean).map((url) => url.replace(/\/+$/, ''))
 );
 
 // --------------------------------------------------
@@ -40,8 +41,8 @@ app.use(helmet());
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow requests without Origin, such as server-to-server
-      // requests and direct health checks.
+      // Allow requests without an Origin header, such as
+      // direct health checks and server-to-server requests.
       if (!origin) {
         return callback(null, true);
       }
@@ -54,9 +55,14 @@ app.use(
 
       console.warn('CORS blocked origin:', origin);
 
-      return callback(new Error('Origin not allowed by CORS'));
+      const error = new Error('Origin not allowed by CORS');
+      error.statusCode = 403;
+
+      return callback(error);
     },
+
     credentials: true,
+
     methods: [
       'GET',
       'POST',
@@ -65,10 +71,13 @@ app.use(
       'DELETE',
       'OPTIONS',
     ],
+
     allowedHeaders: [
       'Content-Type',
       'Authorization',
     ],
+
+    optionsSuccessStatus: 204,
   })
 );
 
@@ -96,6 +105,7 @@ const apiRateLimit = rateLimit({
   limit: 200,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+
   message: {
     success: false,
     message: 'Too many requests. Please try again later.',
@@ -196,12 +206,7 @@ async function startServer() {
     console.log('MongoDB connection established.');
 
     server = app.listen(PORT, '0.0.0.0', () => {
-      const address = server.address();
-
-      console.log(
-        `WanderPlan AI API running on port ${address.port}`
-      );
-
+      console.log(`WanderPlan AI API listening on port ${PORT}`);
       console.log('Health check: /api/health');
       console.log('Authentication routes: /api/auth');
       console.log('Trip routes: /api/trips');
@@ -214,7 +219,7 @@ async function startServer() {
 
       if (error.code === 'EADDRINUSE') {
         console.error(
-          `Port ${PORT} is already in use. Stop the other server or configure another port.`
+          `Port ${PORT} is already in use.`
         );
       }
 
@@ -243,42 +248,26 @@ async function shutdown(signal) {
 
   console.log(`${signal} received. Shutting down gracefully...`);
 
-  if (!server || !server.listening) {
-    try {
-      await disconnectDB();
-      console.log('Database disconnected.');
-    } catch (error) {
-      console.error('Database shutdown error:', error.message);
-      process.exitCode = 1;
+  try {
+    if (server?.listening) {
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
     }
 
-    return;
+    await disconnectDB();
+
+    console.log('Server and database disconnected.');
+  } catch (error) {
+    console.error('Shutdown error:', error.message);
+    process.exitCode = 1;
   }
-
-  server.close(async (error) => {
-    try {
-      await disconnectDB();
-
-      if (error) {
-        console.error(
-          'HTTP server shutdown error:',
-          error.message
-        );
-
-        process.exitCode = 1;
-        return;
-      }
-
-      console.log('Server and database disconnected.');
-    } catch (dbError) {
-      console.error(
-        'Database shutdown error:',
-        dbError.message
-      );
-
-      process.exitCode = 1;
-    }
-  });
 }
 
 // --------------------------------------------------
@@ -314,3 +303,4 @@ process.on('uncaughtException', (error) => {
 // --------------------------------------------------
 
 void startServer();
+
