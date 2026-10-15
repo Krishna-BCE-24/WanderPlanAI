@@ -20,8 +20,14 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
 
-const CLIENT_URL =
-  process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URLS = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+].filter(Boolean);
+
+const allowedOrigins = new Set(
+  CLIENT_URLS.map((url) => url.replace(/\/+$/, ''))
+);
 
 // --------------------------------------------------
 // SECURITY MIDDLEWARE
@@ -33,7 +39,23 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin(origin, callback) {
+      // Allow requests without Origin, such as server-to-server
+      // requests and direct health checks.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+
+      if (allowedOrigins.has(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      console.warn('CORS blocked origin:', origin);
+
+      return callback(new Error('Origin not allowed by CORS'));
+    },
     credentials: true,
     methods: [
       'GET',
@@ -90,7 +112,6 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'WanderPlan AI API is running',
-    database: 'connected',
     timestamp: new Date().toISOString(),
   });
 });
@@ -140,7 +161,9 @@ app.use((err, req, res, next) => {
     err.statusCode >= 400 &&
     err.statusCode < 600
       ? err.statusCode
-      : 500;
+      : err.message === 'Origin not allowed by CORS'
+        ? 403
+        : 500;
 
   res.status(statusCode).json({
     success: false,
@@ -165,21 +188,18 @@ let shuttingDown = false;
 async function startServer() {
   try {
     console.log('Starting WanderPlan AI API...');
-
-    console.log('Frontend origin:', CLIENT_URL);
+    console.log('Allowed frontend origins:', [...allowedOrigins]);
     console.log('Configured port:', PORT);
 
     await connectDB();
 
     console.log('MongoDB connection established.');
 
-    server = app.listen(PORT);
-
-    server.on('listening', () => {
+    server = app.listen(PORT, '0.0.0.0', () => {
       const address = server.address();
 
       console.log(
-        `WanderPlan AI API running at http://localhost:${address.port}`
+        `WanderPlan AI API running on port ${address.port}`
       );
 
       console.log('Health check: /api/health');
@@ -221,20 +241,14 @@ async function shutdown(signal) {
 
   shuttingDown = true;
 
-  console.log(
-    `${signal} received. Shutting down gracefully...`
-  );
+  console.log(`${signal} received. Shutting down gracefully...`);
 
   if (!server || !server.listening) {
     try {
       await disconnectDB();
       console.log('Database disconnected.');
     } catch (error) {
-      console.error(
-        'Database shutdown error:',
-        error.message
-      );
-
+      console.error('Database shutdown error:', error.message);
       process.exitCode = 1;
     }
 
