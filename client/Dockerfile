@@ -7,7 +7,7 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_URL=http://localhost:5000/api
+ARG VITE_API_URL=http://localhost:5001/api
 ARG VITE_MAPBOX_TOKEN
 ARG VITE_GOOGLE_CLIENT_ID
 

@@ -1,4 +1,5 @@
-﻿import 'dotenv/config';
+﻿
+import 'dotenv/config';
 
 import express from 'express';
 import cors from 'cors';
@@ -20,14 +21,17 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
 
+// Explicitly allow local development and production frontend.
 const allowedOrigins = new Set(
   [
     'https://wanderplan-ai-elb8.onrender.com',
     'http://localhost:5173',
-    ...(process.env.CLIENT_URL || '')
-      .split(',')
-      .map((url) => url.trim()),
-  ].filter(Boolean).map((url) => url.replace(/\/+$/, ''))
+    'http://localhost:5174',
+    ...(process.env.CLIENT_URL || '').split(','),
+  ]
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map((url) => url.replace(/\/+$/, ''))
 );
 
 // --------------------------------------------------
@@ -218,9 +222,7 @@ async function startServer() {
       console.error('HTTP server error:', error);
 
       if (error.code === 'EADDRINUSE') {
-        console.error(
-          `Port ${PORT} is already in use.`
-        );
+        console.error(`Port ${PORT} is already in use.`);
       }
 
       process.exitCode = 1;
@@ -303,4 +305,3 @@ process.on('uncaughtException', (error) => {
 // --------------------------------------------------
 
 void startServer();
-
