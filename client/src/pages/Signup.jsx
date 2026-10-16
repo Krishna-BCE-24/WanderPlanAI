@@ -130,6 +130,7 @@ export default function Signup() {
           Your next adventure starts here.
         </p>
 
+      
         <div className="google-login-wrapper">
           <GoogleLogin
             onSuccess={handleGoogleSuccess}
@@ -143,7 +144,7 @@ export default function Signup() {
             shape="rectangular"
             theme="outline"
             size="large"
-            width="320"
+            width={362}
             logo_alignment="left"
           />
         </div>
