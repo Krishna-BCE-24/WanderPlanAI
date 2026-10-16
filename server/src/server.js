@@ -17,13 +17,40 @@ import discoverRoutes from './routes/discovery.routes.js';
 // --------------------------------------------------
 
 const app = express();
-
 const PORT = Number(process.env.PORT) || 5000;
 
-// Explicitly allow local development and production frontend.
+// Render runs the application behind a reverse proxy.
+// Set this only when the deployed proxy topology has
+// exactly one trusted proxy hop before the application.
+if (process.env.TRUST_PROXY_HOPS !== undefined) {
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS);
+
+  if (
+    !Number.isInteger(trustProxyHops) ||
+    trustProxyHops < 0
+  ) {
+    throw new Error(
+      'TRUST_PROXY_HOPS must be a non-negative integer.'
+    );
+  }
+
+  app.set('trust proxy', trustProxyHops);
+} else if (process.env.NODE_ENV === 'production') {
+  // Configure TRUST_PROXY_HOPS in Render only after
+  // verifying the actual trusted proxy topology.
+  console.warn(
+    'TRUST_PROXY_HOPS is not configured; verify proxy settings before enabling IP-based rate limiting.'
+  );
+}
+
+// --------------------------------------------------
+// CORS CONFIGURATION
+// --------------------------------------------------
+
 const allowedOrigins = new Set(
   [
     'https://wanderplan-ai-elb8.onrender.com',
+    'https://wanderplanai-1-10em.onrender.com',
     'http://localhost:5173',
     'http://localhost:5174',
     ...(process.env.CLIENT_URL || '').split(','),
@@ -44,8 +71,7 @@ app.use(helmet());
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow requests without an Origin header, such as
-      // direct health checks and server-to-server requests.
+      // Allow requests without Origin, such as health checks.
       if (!origin) {
         return callback(null, true);
       }
