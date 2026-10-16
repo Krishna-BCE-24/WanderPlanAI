@@ -1,53 +1,26 @@
 
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_SECURE,
-  SMTP_USER,
-  SMTP_PASS,
-  EMAIL_FROM,
+  RESEND_API_KEY,
+  EMAIL_FROM = "WanderPlan AI <onboarding@resend.dev>",
   CLIENT_URL,
 } = process.env;
 
-let transporter;
+let resendClient;
 
-/**
- * Create the SMTP transporter only when required.
- */
-function getTransporter() {
-  if (transporter) {
-    return transporter;
+function getResendClient() {
+  if (!RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is missing from environment variables.");
   }
 
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    throw new Error(
-      "Email configuration missing. Set SMTP_HOST, SMTP_USER and SMTP_PASS in server/.env."
-    );
+  if (!resendClient) {
+    resendClient = new Resend(RESEND_API_KEY);
   }
 
-  const port = Number(SMTP_PORT || 587);
-
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure:
-      SMTP_SECURE !== undefined
-        ? SMTP_SECURE === "true"
-        : port === 465,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  });
-
-  return transporter;
+  return resendClient;
 }
 
-/**
- * Escape user-provided values before inserting them into HTML.
- */
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, (character) => {
     const entities = {
@@ -62,9 +35,6 @@ function escapeHtml(value = "") {
   });
 }
 
-/**
- * Common HTML template for authentication emails.
- */
 function createEmailTemplate({
   title,
   name,
@@ -94,44 +64,26 @@ function createEmailTemplate({
             <h1 style="margin:0 0 24px;color:#102a43;font-size:27px;">
               WanderPlan <span style="color:#3988ff;">AI</span>
             </h1>
-
-            <h2 style="font-size:23px;margin-bottom:16px;">
-              ${safeTitle}
-            </h2>
-
-            <p style="font-size:16px;line-height:1.7;">
-              Hi ${safeName},
-            </p>
-
-            <p style="font-size:15px;line-height:1.8;color:#486581;">
-              ${safeMessage}
-            </p>
-
+            <h2 style="font-size:23px;margin-bottom:16px;">${safeTitle}</h2>
+            <p style="font-size:16px;line-height:1.7;">Hi ${safeName},</p>
+            <p style="font-size:15px;line-height:1.8;color:#486581;">${safeMessage}</p>
             <div style="margin:28px 0;">
-              <a
-                href="${safeActionUrl}"
-                style="display:inline-block;background:#3988ff;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:9px;font-weight:bold;"
-              >
+              <a href="${safeActionUrl}" style="display:inline-block;background:#3988ff;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:9px;font-weight:bold;">
                 ${safeButtonText}
               </a>
             </div>
-
             ${
               safeExpiryText
                 ? `<p style="font-size:13px;color:#627d98;line-height:1.7;">${safeExpiryText}</p>`
                 : ""
             }
-
             <p style="font-size:13px;color:#627d98;line-height:1.7;">
               If the button doesn't work, copy and paste this link into your browser:
             </p>
-
             <p style="font-size:12px;line-height:1.7;word-break:break-all;">
               <a href="${safeActionUrl}" style="color:#3988ff;">${safeActionUrl}</a>
             </p>
-
             <hr style="border:none;border-top:1px solid #e5eaf0;margin:28px 0;" />
-
             <p style="font-size:12px;color:#829ab1;line-height:1.7;">
               If you did not request this email, you can safely ignore it.
               Never share your password or verification codes with anyone.
@@ -143,50 +95,37 @@ function createEmailTemplate({
   `;
 }
 
-/**
- * Send an email.
- *
- * @param {{to: string, subject: string, text: string, html: string}} options
- */
-export async function sendEmail({
-  to,
-  subject,
-  text,
-  html,
-}) {
+export async function sendEmail({ to, subject, text, html }) {
   if (!to || !subject || (!text && !html)) {
-    throw new Error(
-      "sendEmail requires a recipient, subject and email content."
-    );
+    throw new Error("sendEmail requires a recipient, subject and email content.");
   }
 
-  const mailer = getTransporter();
-
   try {
-    const result = await mailer.sendMail({
-      from: EMAIL_FROM || SMTP_USER,
-      to,
+    const resend = getResendClient();
+
+    const { data, error } = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [to],
       subject,
       text,
       html,
     });
 
+    if (error) {
+      console.error("Resend email delivery failed:", error.message);
+      throw new Error("Unable to send email. Please try again later.");
+    }
+
     return {
-      messageId: result.messageId,
-      accepted: result.accepted,
+      messageId: data?.id,
+      accepted: [to],
     };
   } catch (error) {
-    // Log technical details on the server, but never log passwords or tokens.
     console.error("Email delivery failed:", error.message);
     throw new Error("Unable to send email. Please try again later.");
   }
 }
 
-/**
- * Send an account verification email.
- *
- * verificationUrl must contain a token generated by the auth service.
- */
 export async function sendVerificationEmail({
   to,
   name,
@@ -198,7 +137,6 @@ export async function sendVerificationEmail({
   }
 
   const subject = "Verify your WanderPlan AI account";
-
   const text = [
     `Hi ${name || "there"},`,
     "",
@@ -219,19 +157,9 @@ export async function sendVerificationEmail({
     expiryText: `This verification link expires in ${expiresIn}.`,
   });
 
-  return sendEmail({
-    to,
-    subject,
-    text,
-    html,
-  });
+  return sendEmail({ to, subject, text, html });
 }
 
-/**
- * Send a password reset email.
- *
- * resetUrl must contain a short-lived, securely generated reset token.
- */
 export async function sendPasswordResetEmail({
   to,
   name,
@@ -243,7 +171,6 @@ export async function sendPasswordResetEmail({
   }
 
   const subject = "Reset your WanderPlan AI password";
-
   const text = [
     `Hi ${name || "there"},`,
     "",
@@ -265,43 +192,28 @@ export async function sendPasswordResetEmail({
     expiryText: `This password reset link expires in ${expiresIn}.`,
   });
 
-  return sendEmail({
-    to,
-    subject,
-    text,
-    html,
-  });
+  return sendEmail({ to, subject, text, html });
 }
 
-/**
- * Optional helper for constructing frontend links.
- * Pass only trusted, configured frontend routes.
- */
 export function createFrontendUrl(path) {
   if (!CLIENT_URL) {
-    throw new Error("CLIENT_URL is missing from server/.env.");
+    throw new Error("CLIENT_URL is missing from environment variables.");
   }
 
-  const baseUrl = CLIENT_URL.endsWith("/")
-    ? CLIENT_URL
-    : `${CLIENT_URL}/`;
+  const baseUrl = CLIENT_URL.endsWith("/") ? CLIENT_URL : `${CLIENT_URL}/`;
 
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-/**
- * Verify SMTP connectivity during startup or manual diagnostics.
- */
 export async function verifyEmailConnection() {
-  const mailer = getTransporter();
+  // Resend is an HTTP API, so no SMTP connection verification is required.
+  const resend = getResendClient();
 
-  try {
-    await mailer.verify();
-    return true;
-  } catch (error) {
-    console.error("SMTP connection verification failed:", error.message);
+  if (!resend) {
     throw new Error("Email service is unavailable.");
   }
+
+  return true;
 }
 
 export default {
