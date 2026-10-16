@@ -102,20 +102,21 @@ export default function Login() {
           Log in to continue planning your next adventure.
         </p>
 
-       <div className="google-login-wrapper">
-  <GoogleLogin
-    onSuccess={handleGoogleSuccess}
-    onError={() =>
-      showToast('Google sign-in failed. Please try again.', 'error')
-    }
-    text="signin_with"
-    shape="rectangular"
-    theme="outline"
-    size="medium"
-    width="362.67"
-    logo_alignment="left"
-  />
-</div>
+
+        <div className="google-login-wrapper">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() =>
+              showToast('Google sign-in failed. Please try again.', 'error')
+            }
+            text="signin_with"
+            shape="rectangular"
+            theme="outline"
+            size="large"
+            width={362}
+            logo_alignment="left"
+          />
+        </div>
         {googleLoading && (
           <p className="auth-subtitle" role="status">
             Signing in with Google...

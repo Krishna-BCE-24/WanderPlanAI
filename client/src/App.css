@@ -2061,3 +2061,17 @@ input {
     border-radius: 12px;
   }
 }
+
+/* Google Sign-In button sizing */
+.google-login-wrapper {
+  width: 100%;
+  max-width: 362.67px;
+  height: 47px;
+  display: flex;
+  align-items: center;
+}
+
+.google-login-wrapper > div {
+  width: 100%;
+  max-width: 100%;
+}
