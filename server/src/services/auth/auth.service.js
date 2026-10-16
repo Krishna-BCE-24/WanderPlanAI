@@ -1,8 +1,7 @@
-
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import User from '../../models/User.js';
 
 const SALT_ROUNDS = 12;
@@ -12,6 +11,8 @@ const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
 );
+
+let resendClient;
 
 function createError(message, statusCode) {
   const error = new Error(message);
@@ -39,27 +40,16 @@ function hashToken(token) {
     .digest('hex');
 }
 
-function getMailTransporter() {
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_USER,
-    SMTP_PASS,
-  } = process.env;
-
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    throw new Error('SMTP configuration is incomplete.');
+function getResendClient() {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not configured.');
   }
 
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: Number(SMTP_PORT) === 465,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  });
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+
+  return resendClient;
 }
 
 function escapeHtml(value = '') {
@@ -80,15 +70,41 @@ function getFrontendUrl(path, token) {
   const frontendUrl = process.env.CLIENT_URL;
 
   if (!frontendUrl) {
-    throw new Error(
-      'CLIENT_URL is not configured on the server.',
-    );
+    throw new Error('CLIENT_URL is not configured on the server.');
   }
 
   const url = new URL(path, frontendUrl);
   url.searchParams.set('token', token);
 
   return url.toString();
+}
+
+async function sendAuthEmail({ to, subject, text, html }) {
+  if (!to || !subject || (!text && !html)) {
+    throw new Error('Email recipient, subject, and content are required.');
+  }
+
+  const resend = getResendClient();
+
+  const from =
+    process.env.EMAIL_FROM ||
+    'WanderPlan AI <onboarding@resend.dev>';
+
+  const { data, error } = await resend.emails.send({
+    from,
+    to: [to],
+    subject,
+    text,
+    html,
+  });
+
+  if (error) {
+    // Avoid logging API keys, tokens, or sensitive email content.
+    console.error('Resend email delivery failed:', error.message);
+    throw new Error('Unable to send email. Please try again later.');
+  }
+
+  return data;
 }
 
 // --------------------------------------------------
@@ -100,22 +116,15 @@ async function sendVerificationEmail(user) {
 
   user.emailVerificationTokenHash = tokenHash;
   user.emailVerificationExpires = new Date(
-    Date.now() +
-      EMAIL_VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000,
+    Date.now() + EMAIL_VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000,
   );
 
   await user.save();
 
-  const verificationUrl = getFrontendUrl(
-    '/verify-email',
-    token,
-  );
+  const verificationUrl = getFrontendUrl('/verify-email', token);
 
   try {
-    const transporter = getMailTransporter();
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    await sendAuthEmail({
       to: user.email,
       subject: 'Verify your WanderPlan AI email',
       text: [
@@ -178,10 +187,7 @@ export async function registerUser({ name, email, password }) {
     );
   }
 
-  const passwordHash = await bcrypt.hash(
-    password,
-    SALT_ROUNDS,
-  );
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
   let user;
 
@@ -299,10 +305,7 @@ export async function authenticateUser({ email, password }) {
   }).select('+passwordHash');
 
   if (!user || !user.passwordHash || !user.isActive) {
-    throw createError(
-      'Invalid email or password.',
-      401,
-    );
+    throw createError('Invalid email or password.', 401);
   }
 
   const passwordMatches = await bcrypt.compare(
@@ -311,10 +314,7 @@ export async function authenticateUser({ email, password }) {
   );
 
   if (!passwordMatches) {
-    throw createError(
-      'Invalid email or password.',
-      401,
-    );
+    throw createError('Invalid email or password.', 401);
   }
 
   if (!user.emailVerified) {
@@ -391,10 +391,7 @@ export async function authenticateGoogleUser(idToken) {
 
   if (user) {
     if (!user.isActive) {
-      throw createError(
-        'This account is inactive.',
-        403,
-      );
+      throw createError('This account is inactive.', 403);
     }
 
     let changed = false;
@@ -422,10 +419,7 @@ export async function authenticateGoogleUser(idToken) {
 
   if (user) {
     if (!user.isActive) {
-      throw createError(
-        'This account is inactive.',
-        403,
-      );
+      throw createError('This account is inactive.', 403);
     }
 
     if (user.googleId && user.googleId !== googleId) {
@@ -492,22 +486,15 @@ export async function requestPasswordReset(email) {
 
   user.passwordResetTokenHash = tokenHash;
   user.passwordResetExpires = new Date(
-    Date.now() +
-      RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000,
+    Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000,
   );
 
   await user.save();
 
-  const resetUrl = getFrontendUrl(
-    '/reset-password',
-    token,
-  );
+  const resetUrl = getFrontendUrl('/reset-password', token);
 
   try {
-    const transporter = getMailTransporter();
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    await sendAuthEmail({
       to: user.email,
       subject: 'Reset your WanderPlan AI password',
       text: [
@@ -582,10 +569,7 @@ export async function resetUserPassword({ token, password }) {
     );
   }
 
-  user.passwordHash = await bcrypt.hash(
-    password,
-    SALT_ROUNDS,
-  );
+  user.passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
   user.passwordResetTokenHash = undefined;
   user.passwordResetExpires = undefined;
